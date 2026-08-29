@@ -15,14 +15,14 @@ services:
       - TARGET_SITE_URL=http://okkabun-nginx
       - DB_HOST=10.7.171.20
       - DB_PORT=3306
-      - DB_USER=webstats_user
-      - DB_PASSWORD=webstats_password
-      - DB_NAME=web_stats_db
+      - DB_USER=webpulse
+      - DB_PASSWORD=@Instiper2026!
+      - DB_NAME=webpulse
       - NGINX_LOG_PATH=/var/log/target/okkabun_logs/access.log
       - PROBE_INTERVAL_MS=15000
       - AGGREGATION_INTERVAL_MS=60000
     volumes:
-      # Mount folder logs okkabun (Read-Only) untuk menghindari isu Docker membuat folder jika access.log belum ada
+      # Mount folder logs okkabun (Read-Only)
       - /srv/docker/okkabun.instiperjogja.ac.id/logs:/var/log/target/okkabun_logs:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"

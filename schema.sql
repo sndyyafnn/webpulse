@@ -1,8 +1,8 @@
 -- Schema Database untuk web-stats.instiperjogja.ac.id
 -- Host: 10.7.171.20:3306
 
-CREATE DATABASE IF NOT EXISTS `web_stats_db` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-USE `web_stats_db`;
+CREATE DATABASE IF NOT EXISTS `webpulse` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE `webpulse`;
 
 -- Tabel 1: Agregasi Lalu Lintas Per Menit (Time-series data)
 CREATE TABLE IF NOT EXISTS `traffic_metrics` (

@@ -91,10 +91,11 @@ class StatsAggregator {
   }
 
   cleanupOldActiveIps() {
-    // 2-minute rolling active window for responsive realtime updates
-    const twoMinutesAgo = Date.now() - (2 * 60 * 1000);
+    // 30-second rolling active window for responsive realtime updates when tabs are closed
+    const ttlMs = parseInt(process.env.ACTIVE_USER_TTL_MS || '30000', 10);
+    const activeCutoff = Date.now() - ttlMs;
     for (const [key, lastSeen] of this.activeIpsWindow.entries()) {
-      if (lastSeen < twoMinutesAgo) {
+      if (lastSeen < activeCutoff) {
         this.activeIpsWindow.delete(key);
       }
     }

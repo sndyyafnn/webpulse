@@ -22,6 +22,10 @@ class NginxLogParser {
     try {
       if (fs.existsSync(this.logPath)) {
         const stats = fs.statSync(this.logPath);
+        if (!stats.isFile()) {
+          console.log(`[LogParser WARN] Path ${this.logPath} exists but is a directory, not a file. Waiting for log file...`);
+          return;
+        }
         // Start tailing from current end of file (or last 64KB for initial context)
         const initialOffset = Math.max(0, stats.size - 65536);
         this.filePosition = initialOffset;
@@ -40,6 +44,11 @@ class NginxLogParser {
 
     try {
       const stats = fs.statSync(this.logPath);
+      if (!stats.isFile()) {
+        console.log(`[LogParser WARN] ${this.logPath} is a directory, cannot read as log file.`);
+        return;
+      }
+
       if (stats.size < this.filePosition) {
         // Log rotation detected
         console.log('[LogParser INFO] Log rotation detected, resetting file position.');
@@ -53,6 +62,11 @@ class NginxLogParser {
         start: this.filePosition,
         end: stats.size,
         encoding: 'utf-8'
+      });
+
+      stream.on('error', (err) => {
+        console.error('[LogParser ERR] Read stream error:', err.message);
+        this.isTailRunning = false;
       });
 
       const rl = readline.createInterface({
@@ -69,13 +83,13 @@ class NginxLogParser {
         }
       });
 
-      rl.on('close', () => {
-        this.filePosition = stats.size;
+      rl.on('error', (err) => {
+        console.error('[LogParser ERR] Readline error:', err.message);
         this.isTailRunning = false;
       });
 
-      stream.on('error', (err) => {
-        console.error('[LogParser ERR] Read stream error:', err.message);
+      rl.on('close', () => {
+        this.filePosition = stats.size;
         this.isTailRunning = false;
       });
     } catch (err) {

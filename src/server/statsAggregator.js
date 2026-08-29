@@ -143,9 +143,9 @@ class StatsAggregator {
       ? Math.round(bucketToFlush.totalResponseTimeMs / bucketToFlush.responseCountWithTime)
       : 0;
 
-    // Save metric item into recent history cache (up to 60 points)
+    // Save metric item into recent history cache (up to 60 points) with Asia/Jakarta (UTC+7) timezone
     const metricItem = {
-      timestamp: timestamp.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
+      timestamp: timestamp.toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false }).replace(':', '.'),
       totalRequests: bucketToFlush.totalRequests,
       peakRps: bucketToFlush.peakRpsInMinute,
       activeUsers: activeIps,

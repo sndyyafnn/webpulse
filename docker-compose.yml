@@ -11,6 +11,7 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3000
+      - TZ=Asia/Jakarta
       - TARGET_SITE_NAME=okkabun.instiperjogja.ac.id
       - TARGET_SITE_URL=http://okkabun-nginx
       - TARGET_CONTAINER_NAME=okkabun-nginx
@@ -25,7 +26,7 @@ services:
     volumes:
       # 1. Mount folder log fisik
       - /srv/docker/okkabun.instiperjogja.ac.id/logs:/var/log/target/okkabun_logs:ro
-      # 2. Mount Docker Socket (Sangat penting jika Nginx log mengarah ke stdout/stderr Docker)
+      # 2. Mount Docker Socket
       - /var/run/docker.sock:/var/run/docker.sock:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"

@@ -1,53 +1,67 @@
 const fs = require('fs');
+const path = require('path');
 const readline = require('readline');
 const statsAggregator = require('./statsAggregator');
 
 class NginxLogParser {
   constructor(logPath) {
-    this.logPath = logPath || process.env.NGINX_LOG_PATH || '/var/log/target/okkabun_access.log';
+    this.configuredPath = logPath || process.env.NGINX_LOG_PATH || '/var/log/target/okkabun_logs/access.log';
+    this.activeLogFile = null;
     this.filePosition = 0;
-    this.watcher = null;
     this.isTailRunning = false;
   }
 
   start() {
-    console.log(`[LogParser] Starting Nginx log stream watcher on: ${this.logPath}`);
-    this.checkAndInitFile();
-    
-    // Check for file updates every 1 second
+    console.log(`[LogParser] Initializing log parser with target path: ${this.configuredPath}`);
+    this.resolveTargetFile();
+
+    // Check for log updates every 1 second
     setInterval(() => this.readNewLines(), 1000);
   }
 
-  checkAndInitFile() {
+  resolveTargetFile() {
     try {
-      if (fs.existsSync(this.logPath)) {
-        const stats = fs.statSync(this.logPath);
-        if (!stats.isFile()) {
-          console.log(`[LogParser WARN] Path ${this.logPath} exists but is a directory, not a file. Waiting for log file...`);
+      // 1. Direct file check
+      if (fs.existsSync(this.configuredPath)) {
+        const stats = fs.statSync(this.configuredPath);
+        if (stats.isFile()) {
+          this.activeLogFile = this.configuredPath;
           return;
         }
-        // Start tailing from current end of file (or last 64KB for initial context)
-        const initialOffset = Math.max(0, stats.size - 65536);
-        this.filePosition = initialOffset;
-        this.readNewLines();
-      } else {
-        console.log(`[LogParser INFO] Waiting for log file to exist at ${this.logPath}...`);
       }
+
+      // 2. Directory auto-discovery (if configuredPath is a directory or parent directory exists)
+      const targetDir = fs.existsSync(this.configuredPath) && fs.statSync(this.configuredPath).isDirectory()
+        ? this.configuredPath
+        : path.dirname(this.configuredPath);
+
+      if (fs.existsSync(targetDir)) {
+        const files = fs.readdirSync(targetDir);
+        const logCandidate = files.find(f => f.endsWith('.log') || f.includes('access'));
+        if (logCandidate) {
+          this.activeLogFile = path.join(targetDir, logCandidate);
+          console.log(`[LogParser AUTO-DISCOVERY] Found active log file: ${this.activeLogFile}`);
+          return;
+        }
+      }
+
+      console.log(`[LogParser INFO] Waiting for log file at ${this.configuredPath} or inside ${targetDir}...`);
     } catch (err) {
-      console.error(`[LogParser ERR] Error initializing log file:`, err.message);
+      console.error(`[LogParser ERR] Error resolving log file:`, err.message);
     }
   }
 
   readNewLines() {
     if (this.isTailRunning) return;
-    if (!fs.existsSync(this.logPath)) return;
+    
+    if (!this.activeLogFile || !fs.existsSync(this.activeLogFile)) {
+      this.resolveTargetFile();
+      return;
+    }
 
     try {
-      const stats = fs.statSync(this.logPath);
-      if (!stats.isFile()) {
-        console.log(`[LogParser WARN] ${this.logPath} is a directory, cannot read as log file.`);
-        return;
-      }
+      const stats = fs.statSync(this.activeLogFile);
+      if (!stats.isFile()) return;
 
       if (stats.size < this.filePosition) {
         // Log rotation detected
@@ -58,7 +72,7 @@ class NginxLogParser {
       if (stats.size === this.filePosition) return;
 
       this.isTailRunning = true;
-      const stream = fs.createReadStream(this.logPath, {
+      const stream = fs.createReadStream(this.activeLogFile, {
         start: this.filePosition,
         end: stats.size,
         encoding: 'utf-8'
@@ -99,6 +113,12 @@ class NginxLogParser {
   }
 
   parseLine(line) {
+    let sessionId = null;
+    const sessionMatch = line.match(/PHPSESSID=([a-zA-Z0-9,-]+)/i);
+    if (sessionMatch) {
+      sessionId = sessionMatch[1];
+    }
+
     // 1. Try parsing JSON format
     if (line.startsWith('{') && line.endsWith('}')) {
       try {
@@ -109,16 +129,17 @@ class NginxLogParser {
           bytes: parseInt(data.body_bytes_sent || data.bytes_sent || 0, 10),
           responseTimeMs: Math.round(parseFloat(data.request_time || 0) * 1000),
           path: data.request ? data.request.split(' ')[1] || '/' : '/',
-          userAgent: data.http_user_agent || ''
+          userAgent: data.http_user_agent || '',
+          sessionId: data.phpsessid || sessionId
         };
       } catch (e) {
         // Fallback to regex
       }
     }
 
-    // 2. Try parsing standard Nginx Combined format with optional response_time at end
-    // Pattern: IP - - [date] "METHOD PATH HTTP/X" STATUS BYTES "REFERER" "USER_AGENT" [RESPONSE_TIME]
-    const regex = /^(\S+)\s+\S+\s+\S+\s+\[([^\]]+)\]\s+"([A-Z]+)\s+([^"]+)\s+HTTP\/[^"]+"\s+(\d{3})\s+(\d+)(?:\s+"[^"]*"\s+"([^"]*)")?(?:\s+([\d.]+))?/;
+    // 2. Flexible Nginx Combined format parser
+    // Matches IP - - [date] "METHOD PATH HTTP/X" STATUS BYTES "REFERER" "USER_AGENT" [RESPONSE_TIME]
+    const regex = /^(\S+)\s+\S+\s+\S+\s+\[([^\]]+)\]\s+"([A-Z]+)\s+([^"]+?)(?:\s+HTTP\/[^"]+)?"\s+(\d{3})\s+(\d+)(?:\s+"[^"]*"\s+"([^"]*)")?(?:\s+([\d.]+))?/;
     const match = line.match(regex);
 
     if (match) {
@@ -135,19 +156,24 @@ class NginxLogParser {
         bytes,
         responseTimeMs: Math.round(respTimeSec * 1000),
         path,
-        userAgent
+        userAgent,
+        sessionId
       };
     }
 
-    // Simple fallback match if regex fails on custom log line
+    // Fallback robust parser
+    const ipMatch = line.match(/^(\S+)/);
     const statusMatch = line.match(/\s(\d{3})\s/);
+    const bytesMatch = line.match(/\s\d{3}\s+(\d+)/);
+
     return {
-      ip: line.split(' ')[0] || '127.0.0.1',
+      ip: ipMatch ? ipMatch[1] : '127.0.0.1',
       status: statusMatch ? parseInt(statusMatch[1], 10) : 200,
-      bytes: 500,
+      bytes: bytesMatch ? parseInt(bytesMatch[1], 10) : 500,
       responseTimeMs: 25,
       path: '/',
-      userAgent: ''
+      userAgent: '',
+      sessionId
     };
   }
 }

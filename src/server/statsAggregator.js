@@ -11,8 +11,8 @@ class StatsAggregator {
     // Rolling 1-minute aggregation bucket
     this.minuteBucket = this.createEmptyBucket();
 
-    // Sliding window of active unique client IPs (IP -> lastSeenTimestamp)
-    this.activeIpsWindow = new Map(); // 5-min active window
+    // Sliding window of active unique client sessions (SessionKey -> lastSeenTimestamp)
+    this.activeIpsWindow = new Map(); // 2-min active window
 
     // Peak trackers for today
     this.dailyPeaks = {
@@ -81,9 +81,11 @@ class StatsAggregator {
     else if (s >= 500) this.minuteBucket.status5xx++;
 
     // Track client active session in sliding window (2 minute TTL)
-    // Keys by IP + User-Agent so Mobile & Desktop on the same Wi-Fi count as distinct active users
+    // Priority: PHPSESSID > IP + UserAgent > IP
     if (entry.ip && entry.ip !== '-') {
-      const userKey = entry.userAgent ? `${entry.ip}-${entry.userAgent}` : entry.ip;
+      const userKey = entry.sessionId 
+        ? `sess-${entry.sessionId}` 
+        : (entry.userAgent ? `${entry.ip}-${entry.userAgent}` : entry.ip);
       this.activeIpsWindow.set(userKey, Date.now());
     }
   }

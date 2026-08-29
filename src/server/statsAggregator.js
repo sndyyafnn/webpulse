@@ -80,23 +80,26 @@ class StatsAggregator {
     else if (s >= 400 && s < 500) this.minuteBucket.status4xx++;
     else if (s >= 500) this.minuteBucket.status5xx++;
 
-    // Track client IP in sliding window (5 minute TTL)
-    if (entry.ip && entry.ip !== '-' && entry.ip !== '127.0.0.1') {
-      this.activeIpsWindow.set(entry.ip, Date.now());
+    // Track client active session in sliding window (2 minute TTL)
+    // Keys by IP + User-Agent so Mobile & Desktop on the same Wi-Fi count as distinct active users
+    if (entry.ip && entry.ip !== '-') {
+      const userKey = entry.userAgent ? `${entry.ip}-${entry.userAgent}` : entry.ip;
+      this.activeIpsWindow.set(userKey, Date.now());
     }
   }
 
   cleanupOldActiveIps() {
-    const fiveMinutesAgo = Date.now() - (5 * 60 * 1000);
-    for (const [ip, lastSeen] of this.activeIpsWindow.entries()) {
-      if (lastSeen < fiveMinutesAgo) {
-        this.activeIpsWindow.delete(ip);
+    // 2-minute rolling active window for responsive realtime updates
+    const twoMinutesAgo = Date.now() - (2 * 60 * 1000);
+    for (const [key, lastSeen] of this.activeIpsWindow.entries()) {
+      if (lastSeen < twoMinutesAgo) {
+        this.activeIpsWindow.delete(key);
       }
     }
   }
 
   getActiveUsersCount() {
-    return Math.max(1, this.activeIpsWindow.size);
+    return this.activeIpsWindow.size;
   }
 
   updateDailyPeakMetrics() {

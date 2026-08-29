@@ -1,36 +1,59 @@
 const fs = require('fs');
 const path = require('path');
+const http = require('http');
 const readline = require('readline');
 const statsAggregator = require('./statsAggregator');
 
 class NginxLogParser {
   constructor(logPath) {
     this.configuredPath = logPath || process.env.NGINX_LOG_PATH || '/var/log/target/okkabun_logs/access.log';
+    this.containerName = process.env.TARGET_CONTAINER_NAME || 'okkabun-nginx';
     this.activeLogFile = null;
     this.filePosition = 0;
     this.isTailRunning = false;
+    this.isDockerStreamActive = false;
   }
 
   start() {
-    console.log(`[LogParser] Initializing log parser with target path: ${this.configuredPath}`);
-    this.resolveTargetFile();
+    console.log(`[LogParser] Initializing log parser. Target container: ${this.containerName}`);
+    this.resolveAndStartLogSource();
 
-    // Check for log updates every 1 second
-    setInterval(() => this.readNewLines(), 1000);
+    // Check periodically if log source status changes
+    setInterval(() => {
+      if (!this.activeLogFile && !this.isDockerStreamActive) {
+        this.resolveAndStartLogSource();
+      } else if (this.activeLogFile) {
+        this.readNewLines();
+      }
+    }, 1000);
   }
 
-  resolveTargetFile() {
+  resolveAndStartLogSource() {
+    // 1. Try finding physical log file on disk
+    this.resolvePhysicalFile();
+
+    if (this.activeLogFile) {
+      console.log(`[LogParser SUCCESS] Tailing physical log file: ${this.activeLogFile}`);
+      this.readNewLines();
+      return;
+    }
+
+    // 2. Fallback: Stream directly from Docker socket if physical file is missing
+    if (fs.existsSync('/var/run/docker.sock')) {
+      console.log(`[LogParser DOCKER STREAM] Physical log file not found. Fallback to streaming container logs: ${this.containerName} via /var/run/docker.sock`);
+      this.startDockerSocketStream();
+    } else {
+      console.log(`[LogParser INFO] Waiting for log file at ${this.configuredPath} or docker.sock access...`);
+    }
+  }
+
+  resolvePhysicalFile() {
     try {
-      // 1. Direct file check
-      if (fs.existsSync(this.configuredPath)) {
-        const stats = fs.statSync(this.configuredPath);
-        if (stats.isFile()) {
-          this.activeLogFile = this.configuredPath;
-          return;
-        }
+      if (fs.existsSync(this.configuredPath) && fs.statSync(this.configuredPath).isFile()) {
+        this.activeLogFile = this.configuredPath;
+        return;
       }
 
-      // 2. Directory auto-discovery (if configuredPath is a directory or parent directory exists)
       const targetDir = fs.existsSync(this.configuredPath) && fs.statSync(this.configuredPath).isDirectory()
         ? this.configuredPath
         : path.dirname(this.configuredPath);
@@ -40,22 +63,71 @@ class NginxLogParser {
         const logCandidate = files.find(f => f.endsWith('.log') || f.includes('access'));
         if (logCandidate) {
           this.activeLogFile = path.join(targetDir, logCandidate);
-          console.log(`[LogParser AUTO-DISCOVERY] Found active log file: ${this.activeLogFile}`);
           return;
         }
       }
-
-      console.log(`[LogParser INFO] Waiting for log file at ${this.configuredPath} or inside ${targetDir}...`);
     } catch (err) {
-      console.error(`[LogParser ERR] Error resolving log file:`, err.message);
+      // Ignore physical file error and proceed to docker socket
+    }
+  }
+
+  startDockerSocketStream() {
+    if (this.isDockerStreamActive) return;
+    this.isDockerStreamActive = true;
+
+    try {
+      const options = {
+        socketPath: '/var/run/docker.sock',
+        path: `/containers/${this.containerName}/logs?stdout=1&stderr=1&follow=1&tail=50`,
+        method: 'GET'
+      };
+
+      const req = http.request(options, (res) => {
+        console.log(`[LogParser DOCKER STREAM] Successfully connected to Docker logs stream of ${this.containerName}`);
+        let buffer = '';
+
+        res.on('data', (chunk) => {
+          buffer += chunk.toString('utf-8');
+          const lines = buffer.split('\n');
+          buffer = lines.pop();
+
+          for (let line of lines) {
+            // Strip Docker log header frames (8 bytes) if raw stream
+            if (line.length > 8 && line.charCodeAt(0) <= 2) {
+              line = line.substring(8);
+            }
+            line = line.trim();
+            if (line) {
+              const entry = this.parseLine(line);
+              if (entry) {
+                statsAggregator.recordRequest(entry);
+              }
+            }
+          }
+        });
+
+        res.on('end', () => {
+          console.log('[LogParser DOCKER STREAM] Log stream ended. Reconnecting...');
+          this.isDockerStreamActive = false;
+        });
+      });
+
+      req.on('error', (err) => {
+        console.error(`[LogParser DOCKER STREAM ERR] Failed to stream from ${this.containerName}:`, err.message);
+        this.isDockerStreamActive = false;
+      });
+
+      req.end();
+    } catch (err) {
+      console.error('[LogParser DOCKER STREAM ERR]', err.message);
+      this.isDockerStreamActive = false;
     }
   }
 
   readNewLines() {
-    if (this.isTailRunning) return;
-    
-    if (!this.activeLogFile || !fs.existsSync(this.activeLogFile)) {
-      this.resolveTargetFile();
+    if (this.isTailRunning || !this.activeLogFile) return;
+    if (!fs.existsSync(this.activeLogFile)) {
+      this.activeLogFile = null;
       return;
     }
 
@@ -64,7 +136,6 @@ class NginxLogParser {
       if (!stats.isFile()) return;
 
       if (stats.size < this.filePosition) {
-        // Log rotation detected
         console.log('[LogParser INFO] Log rotation detected, resetting file position.');
         this.filePosition = 0;
       }
@@ -133,12 +204,11 @@ class NginxLogParser {
           sessionId: data.phpsessid || sessionId
         };
       } catch (e) {
-        // Fallback to regex
+        // Fallback
       }
     }
 
     // 2. Flexible Nginx Combined format parser
-    // Matches IP - - [date] "METHOD PATH HTTP/X" STATUS BYTES "REFERER" "USER_AGENT" [RESPONSE_TIME]
     const regex = /^(\S+)\s+\S+\s+\S+\s+\[([^\]]+)\]\s+"([A-Z]+)\s+([^"]+?)(?:\s+HTTP\/[^"]+)?"\s+(\d{3})\s+(\d+)(?:\s+"[^"]*"\s+"([^"]*)")?(?:\s+([\d.]+))?/;
     const match = line.match(regex);
 

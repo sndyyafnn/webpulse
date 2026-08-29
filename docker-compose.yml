@@ -13,6 +13,7 @@ services:
       - PORT=3000
       - TARGET_SITE_NAME=okkabun.instiperjogja.ac.id
       - TARGET_SITE_URL=http://okkabun-nginx
+      - TARGET_CONTAINER_NAME=okkabun-nginx
       - DB_HOST=10.7.171.20
       - DB_PORT=3306
       - DB_USER=webpulse
@@ -22,8 +23,10 @@ services:
       - PROBE_INTERVAL_MS=15000
       - AGGREGATION_INTERVAL_MS=60000
     volumes:
-      # Mount folder logs okkabun (Read-Only)
+      # 1. Mount folder log fisik
       - /srv/docker/okkabun.instiperjogja.ac.id/logs:/var/log/target/okkabun_logs:ro
+      # 2. Mount Docker Socket (Sangat penting jika Nginx log mengarah ke stdout/stderr Docker)
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:

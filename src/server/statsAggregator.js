@@ -12,9 +12,9 @@ class StatsAggregator {
     this.minuteBucket = this.createEmptyBucket();
 
     // Sliding window of active unique client sessions (SessionKey -> lastSeenTimestamp)
-    this.activeIpsWindow = new Map(); // 2-min active window
+    this.activeIpsWindow = new Map(); // 30-sec active window
 
-    // Peak trackers for today
+    // Peak trackers for today (subtext records)
     this.dailyPeaks = {
       date: new Date().toISOString().split('T')[0],
       peakActiveUsers: 0,
@@ -43,8 +43,9 @@ class StatsAggregator {
     };
   }
 
-  start() {
+  async start() {
     console.log('[StatsAggregator] Initializing stats aggregation workers...');
+    await this.loadDailyPeaksFromDb();
 
     // 1. Every 1 second: calculate current RPS and reset second counter
     setInterval(() => {
@@ -60,6 +61,24 @@ class StatsAggregator {
     // 2. Every 1 minute: flush minuteBucket to MySQL database host
     const aggInterval = parseInt(process.env.AGGREGATION_INTERVAL_MS || '60000', 10);
     setInterval(() => this.flushMinuteBucketToDb(), aggInterval);
+  }
+
+  async loadDailyPeaksFromDb() {
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const [rows] = await pool.query(
+        `SELECT peak_active_users, peak_rps, total_daily_requests FROM daily_peaks WHERE site_name = ? AND date = ?`,
+        [this.siteName, today]
+      );
+      if (rows && rows.length > 0) {
+        this.dailyPeaks.peakActiveUsers = rows[0].peak_active_users || 0;
+        this.dailyPeaks.peakRps = rows[0].peak_rps || 0;
+        this.dailyPeaks.totalRequestsToday = parseInt(rows[0].total_daily_requests || '0', 10);
+        console.log(`[StatsAggregator DB] Restored today's peak records: Total Req=${this.dailyPeaks.totalRequestsToday}, Peak RPS=${this.dailyPeaks.peakRps}, Peak Users=${this.dailyPeaks.peakActiveUsers}`);
+      }
+    } catch (err) {
+      // Ignore initial DB load errors
+    }
   }
 
   recordRequest(entry) {
@@ -80,7 +99,7 @@ class StatsAggregator {
     else if (s >= 400 && s < 500) this.minuteBucket.status4xx++;
     else if (s >= 500) this.minuteBucket.status5xx++;
 
-    // Track client active session in sliding window (2 minute TTL)
+    // Track client active session in sliding window (30 second TTL)
     // Priority: PHPSESSID > IP + UserAgent > IP
     if (entry.ip && entry.ip !== '-') {
       const userKey = entry.sessionId 
@@ -91,7 +110,7 @@ class StatsAggregator {
   }
 
   cleanupOldActiveIps() {
-    // 30-second rolling active window for responsive realtime updates when tabs are closed
+    // 30-second rolling active window for quick drop when tabs are closed
     const ttlMs = parseInt(process.env.ACTIVE_USER_TTL_MS || '30000', 10);
     const activeCutoff = Date.now() - ttlMs;
     for (const [key, lastSeen] of this.activeIpsWindow.entries()) {
@@ -223,7 +242,7 @@ class StatsAggregator {
       avgResponseTimeMs,
       todayPeaks: {
         peakRpsToday: Math.max(this.dailyPeaks.peakRps, this.currentRps),
-        peakActiveUsersToday: this.dailyPeaks.peakActiveUsers,
+        peakActiveUsersToday: Math.max(this.dailyPeaks.peakActiveUsers, this.getActiveUsersCount()),
         totalRequestsToday: this.dailyPeaks.totalRequestsToday
       },
       statusRatio: {

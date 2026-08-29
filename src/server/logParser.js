@@ -34,6 +34,10 @@ class NginxLogParser {
 
     if (this.activeLogFile) {
       console.log(`[LogParser SUCCESS] Tailing physical log file: ${this.activeLogFile}`);
+      try {
+        const stats = fs.statSync(this.activeLogFile);
+        this.filePosition = stats.size;
+      } catch (e) {}
       this.readNewLines();
       return;
     }
@@ -76,14 +80,15 @@ class NginxLogParser {
     this.isDockerStreamActive = true;
 
     try {
+      // PENTING: tail=0 agar HANYA membaca log BARU dan tidak mengulang 50 log lama dari masa lalu
       const options = {
         socketPath: '/var/run/docker.sock',
-        path: `/containers/${this.containerName}/logs?stdout=1&stderr=1&follow=1&tail=50`,
+        path: `/containers/${this.containerName}/logs?stdout=1&stderr=1&follow=1&tail=0`,
         method: 'GET'
       };
 
       const req = http.request(options, (res) => {
-        console.log(`[LogParser DOCKER STREAM] Successfully connected to Docker logs stream of ${this.containerName}`);
+        console.log(`[LogParser DOCKER STREAM] Successfully connected to Docker logs stream of ${this.containerName} (live tail=0)`);
         let buffer = '';
 
         res.on('data', (chunk) => {

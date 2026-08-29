@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>okkabun Monitoring | Real-Time Traffic & Load Analytics</title>
+  <!-- Google Fonts & Chart.js -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+
+  <style>
+    :root {
+      --bg-gradient: radial-gradient(circle at 10% 20%, #0f172a 0%, #020617 100%);
+      --card-bg: rgba(30, 41, 59, 0.6);
+      --card-border: rgba(255, 255, 255, 0.08);
+      --card-border-glow: rgba(59, 130, 246, 0.3);
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --accent-blue: #3b82f6;
+      --accent-cyan: #06b6d4;
+      --accent-green: #10b981;
+      --accent-amber: #f59e0b;
+      --accent-red: #ef4444;
+      --accent-purple: #8b5cf6;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+    }
+
+    body {
+      background: var(--bg-gradient);
+      color: var(--text-main);
+      min-height: 100vh;
+      padding: 2rem;
+    }
+
+    .container {
+      max-width: 1440px;
+      margin: 0 auto;
+    }
+
+    /* Header */
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 2rem;
+      padding-bottom: 1.5rem;
+      border-bottom: 1px solid var(--card-border);
+    }
+
+    .brand h1 {
+      font-size: 1.6rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, #60a5fa 0%, #a78bfa 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .brand p {
+      color: var(--text-muted);
+      font-size: 0.875rem;
+      margin-top: 0.25rem;
+    }
+
+    .live-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.6rem;
+      background: rgba(16, 185, 129, 0.1);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      color: var(--accent-green);
+      padding: 0.5rem 1rem;
+      border-radius: 9999px;
+      font-size: 0.85rem;
+      font-weight: 600;
+    }
+
+    .pulse-dot {
+      width: 8px;
+      height: 8px;
+      background-color: var(--accent-green);
+      border-radius: 50%;
+      box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+      animation: pulse 1.6s infinite;
+    }
+
+    @keyframes pulse {
+      0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+      70% { box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+    }
+
+    /* KPI Cards Grid */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 1.25rem;
+      margin-bottom: 2rem;
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      backdrop-filter: blur(16px);
+      border-radius: 16px;
+      padding: 1.5rem;
+      transition: all 0.3s ease;
+    }
+
+    .card:hover {
+      border-color: var(--card-border-glow);
+      transform: translateY(-2px);
+    }
+
+    .card-title {
+      font-size: 0.825rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      font-weight: 700;
+      margin-bottom: 0.75rem;
+    }
+
+    .card-value-group {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+    }
+
+    .card-value {
+      font-size: 2.2rem;
+      font-weight: 800;
+      line-height: 1;
+    }
+
+    .card-subtext {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-top: 0.6rem;
+    }
+
+    .highlight-blue { color: #60a5fa; }
+    .highlight-cyan { color: #22d3ee; }
+    .highlight-green { color: #34d399; }
+    .highlight-purple { color: #c084fc; }
+
+    /* Charts Layout Grid */
+    .charts-grid {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 1.5rem;
+      margin-bottom: 2rem;
+    }
+
+    @media (max-width: 1024px) {
+      .charts-grid { grid-template-columns: 1fr; }
+    }
+
+    .chart-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.25rem;
+    }
+
+    .chart-title {
+      font-size: 1.1rem;
+      font-weight: 700;
+    }
+
+    .chart-container {
+      position: relative;
+      width: 100%;
+      height: 300px;
+    }
+
+    /* History Table */
+    .table-container {
+      overflow-x: auto;
+      margin-top: 1rem;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 0.9rem;
+    }
+
+    th {
+      background: rgba(15, 23, 42, 0.6);
+      color: var(--text-muted);
+      padding: 0.85rem 1rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      font-size: 0.75rem;
+      letter-spacing: 0.05em;
+      border-bottom: 1px solid var(--card-border);
+    }
+
+    td {
+      padding: 1rem;
+      border-bottom: 1px solid var(--card-border);
+      color: var(--text-main);
+    }
+
+    tr:hover td {
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 0.25rem 0.6rem;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-weight: 700;
+    }
+
+    .badge-success { background: rgba(16, 185, 129, 0.15); color: #34d399; }
+    .badge-warning { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <!-- Header -->
+    <header>
+      <div class="brand">
+        <h1>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+          </svg>
+          okkabun Web Stats & Load Monitor
+        </h1>
+        <p>Aplikasi Target: <strong style="color: #60a5fa;">okkabun.instiperjogja.ac.id</strong> | Non-Invasive Nginx Stream Telemetry</p>
+      </div>
+      <div class="live-badge">
+        <div class="pulse-dot"></div>
+        <span id="sys-status">MONITORING ACTIVE</span>
+      </div>
+    </header>
+
+    <!-- KPI Grid -->
+    <div class="kpi-grid">
+      <div class="card">
+        <div class="card-title">Current Peak Traffic (RPS)</div>
+        <div class="card-value-group">
+          <div class="card-value highlight-blue" id="val-rps">0</div>
+          <span style="font-size: 0.9rem; color: var(--text-muted);">req/sec</span>
+        </div>
+        <div class="card-subtext">Peak Today: <strong id="val-peak-rps" style="color: #fff;">0</strong> req/sec</div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Peak Active Users</div>
+        <div class="card-value-group">
+          <div class="card-value highlight-cyan" id="val-active-users">0</div>
+          <span style="font-size: 0.9rem; color: var(--text-muted);">users</span>
+        </div>
+        <div class="card-subtext">Peak Active Today: <strong id="val-peak-users" style="color: #fff;">0</strong> users</div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Average Latency / Load Time</div>
+        <div class="card-value-group">
+          <div class="card-value highlight-green" id="val-latency">0</div>
+          <span style="font-size: 0.9rem; color: var(--text-muted);">ms</span>
+        </div>
+        <div class="card-subtext">Synthetic Probe Latency: <strong id="val-probe-latency" style="color: #fff;">0</strong> ms</div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Total Requests Today</div>
+        <div class="card-value-group">
+          <div class="card-value highlight-purple" id="val-total-req">0</div>
+        </div>
+        <div class="card-subtext">Monitored via Nginx Access Stream</div>
+      </div>
+    </div>
+
+    <!-- Charts Section -->
+    <div class="charts-grid">
+      <div class="card">
+        <div class="chart-header">
+          <div class="chart-title">Real-Time Traffic & Requests/Sec (RPS)</div>
+          <span style="font-size: 0.8rem; color: var(--text-muted);" id="last-updated">Live updates</span>
+        </div>
+        <div class="chart-container">
+          <canvas id="trafficChart"></canvas>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="chart-header">
+          <div class="chart-title">Server Load & HTTP Status Ratio</div>
+        </div>
+        <div class="chart-container">
+          <canvas id="statusChart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Daily Peak History Table -->
+    <div class="card">
+      <div class="chart-header">
+        <div class="chart-title">Riwayat Puncak Harian (Daily Peak Summary)</div>
+      </div>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Tanggal</th>
+              <th>Peak Active Users</th>
+              <th>Waktu Peak Users</th>
+              <th>Peak RPS</th>
+              <th>Waktu Peak RPS</th>
+              <th>Total Request</th>
+              <th>Status Server</th>
+            </tr>
+          </thead>
+          <tbody id="peak-table-body">
+            <tr>
+              <td colspan="7" style="text-align: center; color: var(--text-muted);">Memuat data riwayat...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    // Chart 1: Traffic Chart Setup
+    const ctxTraffic = document.getElementById('trafficChart').getContext('2d');
+    const gradientRps = ctxTraffic.createLinearGradient(0, 0, 0, 300);
+    gradientRps.addColorStop(0, 'rgba(59, 130, 246, 0.4)');
+    gradientRps.addColorStop(1, 'rgba(59, 130, 246, 0.0)');
+
+    const trafficChart = new Chart(ctxTraffic, {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [{
+          label: 'Requests / Second (RPS)',
+          data: [],
+          borderColor: '#3b82f6',
+          backgroundColor: gradientRps,
+          fill: true,
+          tension: 0.4,
+          borderWidth: 3,
+          pointRadius: 3,
+          pointHoverRadius: 6
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8' } },
+          y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8' }, beginAtZero: true }
+        }
+      }
+    });
+
+    // Chart 2: Status Doughnut Chart Setup
+    const ctxStatus = document.getElementById('statusChart').getContext('2d');
+    const statusChart = new Chart(ctxStatus, {
+      type: 'doughnut',
+      data: {
+        labels: ['HTTP 2xx (OK)', 'HTTP 3xx (Redirect)', 'HTTP 4xx (Client Err)', 'HTTP 5xx (Server Load)'],
+        datasets: [{
+          data: [1, 0, 0, 0],
+          backgroundColor: ['#10b981', '#3b82f6', '#f59e0b', '#ef4444'],
+          borderWidth: 0
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'bottom', labels: { color: '#94a3b8', font: { size: 11 } } }
+        },
+        cutout: '70%'
+      }
+    });
+
+    // Data Fetching Function
+    async function fetchLiveStats() {
+      try {
+        const res = await fetch('/api/stats/live');
+        const json = await res.json();
+        if (!json.success) return;
+
+        const data = json.data;
+        document.getElementById('val-rps').textContent = data.currentRps;
+        document.getElementById('val-peak-rps').textContent = data.todayPeaks.peakRpsToday;
+        document.getElementById('val-active-users').textContent = data.activeUsersNow;
+        document.getElementById('val-peak-users').textContent = data.todayPeaks.peakActiveUsersToday;
+        document.getElementById('val-latency').textContent = data.avgResponseTimeMs;
+        document.getElementById('val-probe-latency').textContent = data.probe.latencyMs;
+        document.getElementById('val-total-req').textContent = data.todayPeaks.totalRequestsToday.toLocaleString();
+
+        document.getElementById('last-updated').textContent = 'Pembaruan: ' + new Date().toLocaleTimeString();
+
+        // Update Status Chart
+        const s = data.statusRatio;
+        statusChart.data.datasets[0].data = [s.status2xx || 1, s.status3xx || 0, s.status4xx || 0, s.status5xx || 0];
+        statusChart.update();
+
+        // Update Traffic Line Chart
+        if (data.recentHistory && data.recentHistory.length > 0) {
+          trafficChart.data.labels = data.recentHistory.map(h => h.timestamp);
+          trafficChart.data.datasets[0].data = data.recentHistory.map(h => h.peakRps);
+          trafficChart.update();
+        }
+      } catch (err) {
+        console.error('Fetch live stats error:', err);
+      }
+    }
+
+    async function fetchPeaksTable() {
+      try {
+        const res = await fetch('/api/stats/peaks');
+        const json = await res.json();
+        if (!json.success || !json.data) return;
+
+        const tbody = document.getElementById('peak-table-body');
+        if (json.data.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--text-muted);">Belum ada riwayat tercatat hari ini.</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = json.data.map(row => `
+          <tr>
+            <td><strong>${row.date}</strong></td>
+            <td><strong style="color: #22d3ee;">${row.peak_active_users} users</strong></td>
+            <td>${row.peak_users_at || '-'}</td>
+            <td><strong style="color: #60a5fa;">${row.peak_rps} req/sec</strong></td>
+            <td>${row.peak_rps_at || '-'}</td>
+            <td>${Number(row.total_daily_requests).toLocaleString()}</td>
+            <td><span class="badge badge-success">HEALTHY</span></td>
+          </tr>
+        `).join('');
+      } catch (err) {
+        console.error('Fetch peaks table error:', err);
+      }
+    }
+
+    // Auto Refresh Intervals
+    fetchLiveStats();
+    fetchPeaksTable();
+    setInterval(fetchLiveStats, 2000);
+    setInterval(fetchPeaksTable, 30000);
+  </script>
+</body>
+</html>

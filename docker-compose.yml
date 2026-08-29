@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  web-stats:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: web-stats-app
+    restart: always
+    ports:
+      # Direct IP Access via Port 3000 (e.g. http://10.7.171.20:3000 atau http://SERVER_IP:3000)
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - TARGET_SITE_NAME=okkabun.instiperjogja.ac.id
+      - TARGET_SITE_URL=http://okkabun-nginx
+      - DB_HOST=10.7.171.20
+      - DB_PORT=3306
+      - DB_USER=webstats_user
+      - DB_PASSWORD=webstats_password
+      - DB_NAME=web_stats_db
+      - NGINX_LOG_PATH=/var/log/target/okkabun_access.log
+      - PROBE_INTERVAL_MS=15000
+      - AGGREGATION_INTERVAL_MS=60000
+    volumes:
+      # Mount access log container okkabun-nginx (Read-Only)
+      - /srv/docker/okkabun.instiperjogja.ac.id/logs/access.log:/var/log/target/okkabun_access.log:ro
+    networks:
+      - proxy
+
+networks:
+  proxy:
+    external: true
